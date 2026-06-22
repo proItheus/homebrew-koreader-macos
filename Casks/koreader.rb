@@ -1,8 +1,9 @@
 cask "koreader" do
   version "0.0.0"                        # auto-updated by CI
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
 
   arch arm: "arm64", intel: "x86_64"
+  sha256 arm:   "0000000000000000000000000000000000000000000000000000000000000000",
+         intel: "0000000000000000000000000000000000000000000000000000000000000000"
 
   url "https://github.com/OWNER/REPO/releases/download/koreader-v#{version}/koreader-macos-#{arch}.7z",
       verified: "github.com/OWNER/"

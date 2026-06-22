@@ -1,0 +1,118 @@
+name: Update sources
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Mirror mode (nightly|tagged)'
+        required: true
+        type: string
+      release_tag:
+        description: 'Release tag in this repo'
+        required: true
+        type: string
+      version:
+        description: 'KOReader version (tagged only)'
+        required: false
+        type: string
+      arm64_nix_hash:
+        description: 'SRI hash for arm64 7z'
+        required: true
+        type: string
+      x86_64_nix_hash:
+        description: 'SRI hash for x86_64 7z'
+        required: true
+        type: string
+      arm64_cask_hash:
+        description: 'SHA256 for arm64 cask'
+        required: true
+        type: string
+      x86_64_cask_hash:
+        description: 'SHA256 for x86_64 cask'
+        required: true
+        type: string
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # ── update sources.nix ───────────────────────────────────────────
+
+      - name: Update sources.nix
+        env:
+          TAG: ${{ inputs.release_tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          MODE="${{ inputs.mode }}"
+          VERSION="${{ inputs.version }}"
+          NIX_KEY="$([ "$MODE" = "nightly" ] && echo 'koreader-nightly' || echo 'koreader')"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+
+          # version
+          if [ "$MODE" = "tagged" ]; then
+            sed -i "/^  ${NIX_KEY} = {/,/^  };/{
+              s/version = \".*\"/version = \"${VERSION}\"/
+            }" sources.nix
+          fi
+
+          # arm64
+          sed -i "/^  ${NIX_KEY} = {/,/^  };/{
+            /arm64 = {/,/};/{
+              s|url = \".*\"|url = \"${BASE_URL}/koreader-macos-arm64.7z\"|
+              s|sha256 = \".*\"|sha256 = \"${{ inputs.arm64_nix_hash }}\"|
+            }
+          }" sources.nix
+
+          # x86_64
+          sed -i "/^  ${NIX_KEY} = {/,/^  };/{
+            /x86_64 = {/,/};/{
+              s|url = \".*\"|url = \"${BASE_URL}/koreader-macos-x86_64.7z\"|
+              s|sha256 = \".*\"|sha256 = \"${{ inputs.x86_64_nix_hash }}\"|
+            }
+          }" sources.nix
+
+          echo '=== updated sources.nix ==='
+          cat sources.nix
+
+      # ── update Casks/koreader.rb (tagged only) ────────────────────────
+
+      - name: Update cask (tagged)
+        if: inputs.mode == 'tagged'
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          VERSION="${{ inputs.version }}"
+
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" Casks/koreader.rb
+          sed -i "/^  sha256 arm:/s/\".*\"/\"${{ inputs.arm64_cask_hash }}\"/" Casks/koreader.rb
+          sed -i "/^         intel:/s/\".*\"/\"${{ inputs.x86_64_cask_hash }}\"/" Casks/koreader.rb
+          sed -i "s|https://github.com/[^/]*/[^/]*/releases|https://github.com/${REPO}/releases|" Casks/koreader.rb
+          sed -i "s|github.com/[^/]*/\"|github.com/${REPO%%/*}/\"|" Casks/koreader.rb
+
+          echo '=== updated cask ==='
+          cat Casks/koreader.rb
+
+      # ── commit & push ────────────────────────────────────────────────
+
+      - name: Commit changes
+        env:
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git config user.name  github-actions
+          git config user.email github-actions@github.com
+
+          git add sources.nix Casks/koreader.rb flake.lock 2>/dev/null || true
+          git commit -m "mirror: KOReader ${TAG}"
+
+          git pull --rebase origin HEAD 2>/dev/null || true
+          git push
