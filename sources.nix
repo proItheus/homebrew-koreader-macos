@@ -13,12 +13,12 @@
   };
   koreader-nightly = {
     arm64 = {
-      url = "https://github.com/OWNER/REPO/releases/download/koreader-nightly/koreader-macos-arm64.7z";
-      sha256 = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+      url = "https://github.com/proItheus/koreader-macos/releases/download/koreader-nightly/koreader-macos-arm64.7z";
+      sha256 = "sha256-KTQhVpbXU6QCzjFXZfx8avZePEgCiYZP6aCdW7CHqV8=";
     };
     x86_64 = {
-      url = "https://github.com/OWNER/REPO/releases/download/koreader-nightly/koreader-macos-x86_64.7z";
-      sha256 = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+      url = "https://github.com/proItheus/koreader-macos/releases/download/koreader-nightly/koreader-macos-x86_64.7z";
+      sha256 = "sha256-/R3BeE6d1qYGszpJ9sD031ZwRHKE3DWEd6IRgW6ipmw=";
     };
   };
 }
