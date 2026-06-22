@@ -128,8 +128,7 @@ jobs:
           set -ex
 
           find artifacts -name '*.7z' | while read -r src; do
-            dir=$(dirname "$src")
-            case "$dir" in
+            case "$src" in
               *[Aa][Rr][Mm]64*) arch=arm64 ;;
               *x86[-_]64* | *X86[-_]64*) arch=x86_64 ;;
               *) continue ;;
