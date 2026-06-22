@@ -1,6 +1,9 @@
 name: Mirror KOReader
 
 on:
+  push:
+    paths:
+      - '.github/workflows/**'
   workflow_dispatch:
     inputs:
       mode:
@@ -41,7 +44,11 @@ jobs:
       - name: Resolve CI run
         id: resolve
         run: |
-          MODE="${{ inputs.mode }}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            MODE="nightly"
+          else
+            MODE="${{ inputs.mode }}"
+          fi
           TAG="${{ inputs.tag }}"
 
           if [ "$MODE" = "tagged" ]; then
@@ -170,7 +177,11 @@ jobs:
           TAG: ${{ steps.resolve.outputs.release_tag }}
           PRERELEASE: ${{ steps.resolve.outputs.prerelease }}
         run: |
-          MODE="${{ inputs.mode }}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            MODE="nightly"
+          else
+            MODE="${{ inputs.mode }}"
+          fi
           VERSION="${{ inputs.tag }}"
 
           if [ "$MODE" = "nightly" ]; then
