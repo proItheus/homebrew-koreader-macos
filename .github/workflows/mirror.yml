@@ -1,0 +1,241 @@
+name: Mirror KOReader
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Mirror mode'
+        required: true
+        type: choice
+        options:
+          - nightly
+          - tagged
+      tag:
+        description: 'Upstream tag (tagged mode only)'
+        required: false
+        type: string
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # ── resolve upstream CI run ──────────────────────────────────────
+
+      - name: Resolve CI run
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.KOREADER_PAT }}
+        run: |
+          MODE="${{ inputs.mode }}"
+          TAG="${{ inputs.tag }}"
+
+          if [ "$MODE" = "tagged" ]; then
+            BRANCH="$TAG"
+            EVENT="push"
+            RELEASE_TAG="koreader-${TAG}"
+            PRERELEASE="false"
+          else
+            BRANCH="master"
+            EVENT="push"
+            RELEASE_TAG="koreader-nightly"
+            PRERELEASE="true"
+          fi
+
+          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${PRERELEASE}"   >> "$GITHUB_OUTPUT"
+          echo "mode=${MODE}"               >> "$GITHUB_OUTPUT"
+
+          RUN_ID=$(gh api \
+            "repos/koreader/koreader/actions/workflows/4070926/runs?branch=${BRANCH}&status=success&event=${EVENT}&per_page=1" \
+            --jq '.workflow_runs[0].id // empty')
+
+          if [ -z "$RUN_ID" ]; then
+            echo "ERROR: no successful CI run found for branch=${BRANCH}" >&2
+            exit 1
+          fi
+          echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+
+      # ── skip already-mirrored tagged releases ────────────────────────
+
+      - name: Skip if already mirrored (tagged)
+        if: inputs.mode == 'tagged'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" --json tagName &>/dev/null; then
+            echo "Release $RELEASE_TAG already mirrored — nothing to do."
+            exit 78   # neutral exit — workflow stops without failing
+          fi
+        env:
+          RELEASE_TAG: ${{ steps.resolve.outputs.release_tag }}
+
+      # ── download artifacts ───────────────────────────────────────────
+
+      - name: Download artifacts
+        env:
+          GH_TOKEN: ${{ secrets.KOREADER_PAT }}
+        run: |
+          RUN_ID="${{ steps.resolve.outputs.run_id }}"
+
+          rm -rf artifacts
+          mkdir -p artifacts
+
+          gh run download "$RUN_ID" -R koreader/koreader \
+            -p "*ARM64*"  -D artifacts/arm64
+
+          gh run download "$RUN_ID" -R koreader/koreader \
+            -p "*x86-64*" -D artifacts/x86_64
+
+          echo '=== downloaded files ==='
+          find artifacts -type f
+
+      # ── rename & hash ────────────────────────────────────────────────
+
+      - name: Rename and hash
+        id: hash
+        run: |
+          set -ex
+
+          mkdir -p dist
+
+          for arch in arm64 x86_64; do
+            SRC=$(echo artifacts/${arch}/*.7z)
+            DST="dist/koreader-macos-${arch}.7z"
+            cp "$SRC" "$DST"
+
+            NIX_HASH=$(python3 -c "
+          import hashlib, base64
+          h = hashlib.sha256()
+          with open('${DST}', 'rb') as f:
+              while b := f.read(8192): h.update(b)
+          print('sha256-' + base64.b64encode(h.digest()).decode())
+          ")
+            CASK_HASH=$(shasum -a 256 "$DST" | cut -d' ' -f1)
+
+            echo "${arch}_nix_hash=${NIX_HASH}"   >> "$GITHUB_OUTPUT"
+            echo "${arch}_cask_hash=${CASK_HASH}" >> "$GITHUB_OUTPUT"
+          done
+
+      # ── publish release ──────────────────────────────────────────────
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.resolve.outputs.release_tag }}
+          PRERELEASE: ${{ steps.resolve.outputs.prerelease }}
+        run: |
+          MODE="${{ inputs.mode }}"
+          VERSION="${{ inputs.tag }}"
+
+          if [ "$MODE" = "nightly" ]; then
+            TITLE="KOReader macOS — nightly"
+            NOTES="Mirrored from koreader/koreader CI (master)."
+          else
+            TITLE="KOReader macOS ${VERSION}"
+            NOTES="Mirrored from koreader/koreader ${VERSION}."
+          fi
+
+          if gh release view "$TAG" &>/dev/null; then
+            echo "Updating existing release ${TAG}..."
+            gh release upload "$TAG" dist/*.7z --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --prerelease="$PRERELEASE"
+          else
+            gh release create "$TAG" dist/*.7z \
+              --title "$TITLE" \
+              --notes "$NOTES" \
+              --prerelease="$PRERELEASE"
+          fi
+
+      # ── update sources.nix ───────────────────────────────────────────
+
+      - name: Update sources.nix
+        env:
+          TAG: ${{ steps.resolve.outputs.release_tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          MODE="${{ inputs.mode }}"
+          VERSION="${{ inputs.tag }}"
+          NIX_KEY="$([ "$MODE" = "nightly" ] && echo 'koreader-nightly' || echo 'koreader')"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+
+          # version
+          if [ "$MODE" = "tagged" ]; then
+            sed -i "/^  ${NIX_KEY} = {/,/^  };/{
+              s/version = \".*\"/version = \"${VERSION}\"/
+            }" sources.nix
+          fi
+
+          # arm64 url
+          sed -i "/^  ${NIX_KEY} = {/,/^  };/{
+            /arm64 = {/,/};/{
+              s|url = \".*\"|url = \"${BASE_URL}/koreader-macos-arm64.7z\"|
+            }
+          }" sources.nix
+
+          # arm64 sha256
+          sed -i "/^  ${NIX_KEY} = {/,/^  };/{
+            /arm64 = {/,/};/{
+              s|sha256 = \".*\"|sha256 = \"${{ steps.hash.outputs.arm64_nix_hash }}\"|
+            }
+          }" sources.nix
+
+          # x86_64 url
+          sed -i "/^  ${NIX_KEY} = {/,/^  };/{
+            /x86_64 = {/,/};/{
+              s|url = \".*\"|url = \"${BASE_URL}/koreader-macos-x86_64.7z\"|
+            }
+          }" sources.nix
+
+          # x86_64 sha256
+          sed -i "/^  ${NIX_KEY} = {/,/^  };/{
+            /x86_64 = {/,/};/{
+              s|sha256 = \".*\"|sha256 = \"${{ steps.hash.outputs.x86_64_nix_hash }}\"|
+            }
+          }" sources.nix
+
+          echo '=== updated sources.nix ==='
+          cat sources.nix
+
+      # ── update Casks/koreader.rb (tagged only) ────────────────────────
+
+      - name: Update cask (tagged)
+        if: inputs.mode == 'tagged'
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          VERSION="${{ inputs.tag }}"
+          ARM64_HASH="${{ steps.hash.outputs.arm64_cask_hash }}"
+
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" Casks/koreader.rb
+          sed -i "s/sha256 \".*\"/sha256 \"${ARM64_HASH}\"/" Casks/koreader.rb
+          sed -i "s|https://github.com/[^/]*/[^/]*/releases|https://github.com/${REPO}/releases|" Casks/koreader.rb
+          sed -i "s|github.com/[^/]*/\"|github.com/${REPO%%/*}/\"|" Casks/koreader.rb
+
+          echo '=== updated cask ==='
+          cat Casks/koreader.rb
+
+      # ── commit & push ────────────────────────────────────────────────
+
+      - name: Commit changes
+        env:
+          TAG: ${{ steps.resolve.outputs.release_tag }}
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git config user.name  github-actions
+          git config user.email github-actions@github.com
+
+          git add sources.nix Casks/koreader.rb flake.lock 2>/dev/null || true
+          git commit -m "mirror: KOReader ${TAG}"
+
+          git pull --rebase origin HEAD 2>/dev/null || true
+          git push

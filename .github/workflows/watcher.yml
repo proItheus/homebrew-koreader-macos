@@ -1,0 +1,53 @@
+name: Watch KOReader
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Dispatch nightly mirror
+        run: |
+          gh workflow run mirror.yml -f mode=nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Check for new tagged release
+        id: check
+        run: |
+          LATEST=$(curl -sSf https://api.github.com/repos/koreader/koreader/releases/latest | jq -r .tag_name)
+          echo "latest=${LATEST}" >> "$GITHUB_OUTPUT"
+
+          CACHED=$(cat .latest-tag 2>/dev/null || echo '')
+          if [ "${LATEST}" != "${CACHED}" ]; then
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Persist latest tag
+        if: steps.check.outputs.new == 'true'
+        run: |
+          printf '%s\n' "$TAG" > .latest-tag
+          git config user.name  github-actions
+          git config user.email github-actions@github.com
+          git add .latest-tag
+          git commit -m "track: KOReader ${TAG}" && git push || true
+        env:
+          TAG: ${{ steps.check.outputs.latest }}
+
+      - name: Dispatch tagged mirror
+        if: steps.check.outputs.new == 'true'
+        run: |
+          gh workflow run mirror.yml -f mode=tagged -f tag="$TAG"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.check.outputs.latest }}
