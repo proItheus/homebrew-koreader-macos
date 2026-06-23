@@ -4,7 +4,7 @@ cask "koreader-nightly" do
 
   arch arm: "arm64", intel: "x86_64"
 
-  url "https://github.com/proItheus/koreader-macos/releases/download/koreader-nightly/koreader-macos-#{arch}.7z",
+  url "https://github.com/proItheus/homebrew-koreader-macos/releases/download/koreader-nightly/koreader-macos-#{arch}.7z",
       verified: "github.com/proItheus/"
   name "KOReader Nightly"
   desc "Document viewer for PDF, EPUB, DJVU, FB2, CBZ — bleeding-edge CI builds"
