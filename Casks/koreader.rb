@@ -1,9 +1,9 @@
 cask "koreader" do
-  version "v2026.07"                        # auto-updated by CI
+  version "v2026.07.1"                        # auto-updated by CI
 
   arch arm: "arm64", intel: "x86_64"
-  sha256 arm:   "8648c5f487ad5762aefaca9a2f6a6d73e6fad477d13ee6255864f673dcdc23a1",
-         intel: "6b45a041aff2f32dc719230dc268fc5d5536f19f93b09abace23dea3059e359c"
+  sha256 arm:   "f6f3feda6ba519e2aad16992e4aaa57c615de7a89ff816f824e15a4bde6ecb13",
+         intel: "d94c6fab7a7c12fd8abb89596df283fbbcec98518923c694b140c36601c7614e"
 
   url "https://github.com/proItheus/homebrew-koreader-macos/releases/download/koreader-v#{version}/koreader-macos-#{arch}.7z",
       verified: "github.com/proItheus/"
