@@ -14,11 +14,11 @@
   koreader-nightly = {
     arm64 = {
       url = "https://github.com/proItheus/homebrew-koreader-macos/releases/download/koreader-nightly/koreader-macos-arm64.7z";
-      sha256 = "sha256-mMZJzlSgnYtc9OUyAphAkuVy4zIsylSAxHGzepslekY=";
+      sha256 = "sha256-9XZJ2V66/8s6quAPbBYnktlvR3rVAFW+g/jnE5VABDg=";
     };
     x86_64 = {
       url = "https://github.com/proItheus/homebrew-koreader-macos/releases/download/koreader-nightly/koreader-macos-x86_64.7z";
-      sha256 = "sha256-VHhKDQoTxsYWW+yW9y/7lTFDCaiu64Co/rguko0IZ7M=";
+      sha256 = "sha256-FG3FkmezU19pO5Xzk+43IZBMJEOl1Z4/KyEQv92qSt0=";
     };
   };
 }
